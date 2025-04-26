@@ -1,125 +1,124 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>HL-Style Mobile 16:9</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Test Camera</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
         body { margin: 0; overflow: hidden; }
-        #mobileControls {
-            position: fixed;
-            bottom: 20px;
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            padding: 0 20px;
-            touch-action: none;
-        }
-        .joystick {
-            width: 80px;
-            height: 80px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 50%;
-            border: 2px solid #6B8E23;
-        }
-        #fireBtn {
-            position: fixed;
-            right: 20px;
-            bottom: 100px;
-            width: 60px;
-            height: 60px;
-            background: rgba(255,0,0,0.3);
-            border-radius: 50%;
+        #debug { 
+            position: fixed; 
+            top: 10px; 
+            left: 10px; 
+            color: white; 
+            font-family: Arial;
         }
     </style>
 </head>
 <body>
-    <div id="mobileControls">
-        <div class="joystick" id="moveStick"></div>
-        <div class="joystick" id="lookStick"></div>
-    </div>
-    <div id="fireBtn"></div>
+    <div id="debug">Касайтесь экрана для управления</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-// 1. Настройка сцены и камеры
+// 1. Настройка сцены
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer();
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// 2. Освещение
+// 2. Освещение и карта
 const light = new THREE.DirectionalLight(0xffffff, 1);
 light.position.set(0, 10, 10);
 scene.add(light);
 scene.add(new THREE.AmbientLight(0x404040));
 
-// 3. Генерация карты (видна сразу)
-function createMap() {
-    // Пол
-    const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(20, 20),
-        new THREE.MeshPhongMaterial({ color: 0x808080 })
-    );
-    floor.rotation.x = -Math.PI/2;
-    scene.add(floor);
+// Пол и стены
+const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(20, 20),
+    new THREE.MeshPhongMaterial({ color: 0x808080 })
+);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
 
-    // Кирпичная стена
-    const brickWall = new THREE.Mesh(
-        new THREE.BoxGeometry(10, 4, 1),
-        new THREE.MeshPhongMaterial({ color: 0xB22222 })
-    );
-    brickWall.position.set(0, 2, -5);
-    scene.add(brickWall);
+const wall = new THREE.Mesh(
+    new THREE.BoxGeometry(10, 5, 1),
+    new THREE.MeshPhongMaterial({ color: 0xB22222 })
+);
+wall.position.set(0, 2.5, -5);
+scene.add(wall);
 
-    // Лестница
-    for(let i = 0; i < 5; i++) {
-        const step = new THREE.Mesh(
-            new THREE.BoxGeometry(2, 0.5, 1),
-            new THREE.MeshPhongMaterial({ color: 0x696969 })
-        );
-        step.position.set(3, i*0.5, i*2-5);
-        scene.add(step);
-    }
-}
-createMap(); // Сразу создаем карту
+// 3. Настройка управления
+let touchStartX = 0;
+let touchStartY = 0;
+let isRotating = false;
+const rotationSpeed = 0.005;
+const moveSpeed = 0.1;
 
-// 4. Настройка камеры
+// Начальные координаты камеры
 camera.position.set(0, 3, 5);
 camera.lookAt(0, 0, 0);
 
-// 5. Мобильное управление
-let touchMove = { x: 0, y: 0 };
-let touchLook = { x: 0, y: 0 };
-
-document.getElementById('moveStick').addEventListener('touchmove', e => {
-    const rect = e.target.getBoundingClientRect();
-    touchMove.x = (e.touches[0].clientX - rect.left - 40) / 40;
-    touchMove.y = (e.touches[0].clientY - rect.top - 40) / 40;
+// 4. Обработчики касаний
+document.addEventListener('touchstart', e => {
+    e.preventDefault();
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    isRotating = true;
 });
 
-document.getElementById('lookStick').addEventListener('touchmove', e => {
-    const rect = e.target.getBoundingClientRect();
-    touchLook.x = (e.touches[0].clientX - rect.left - 40) / 40;
-    touchLook.y = (e.touches[0].clientY - rect.top - 40) / 40;
+document.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if(!isRotating) return;
+
+    const deltaX = e.touches[0].clientX - touchStartX;
+    const deltaY = e.touches[0].clientY - touchStartY;
+
+    // Поворот камеры
+    camera.rotation.y -= deltaX * rotationSpeed;
+    camera.rotation.x -= deltaY * rotationSpeed * 0.5;
+    
+    // Ограничение вертикального поворота
+    camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+});
+
+document.addEventListener('touchend', () => {
+    isRotating = false;
+});
+
+// 5. Движение через свайпы
+let lastTouchY = 0;
+document.addEventListener('touchstart', e => {
+    lastTouchY = e.touches[0].clientY;
+});
+
+document.addEventListener('touchmove', e => {
+    const deltaY = e.touches[0].clientY - lastTouchY;
+    
+    // Движение вперед/назад
+    const direction = new THREE.Vector3(0, 0, -1);
+    direction.applyQuaternion(camera.quaternion);
+    camera.position.add(direction.multiplyScalar(-deltaY * 0.01));
+
+    lastTouchY = e.touches[0].clientY;
 });
 
 // 6. Анимация
 function animate() {
     requestAnimationFrame(animate);
-    
-    // Движение
-    camera.position.x += touchMove.x * 0.1;
-    camera.position.z += touchMove.y * 0.1;
-    
-    // Поворот
-    camera.rotation.y += touchLook.x * 0.05;
-    camera.rotation.x += touchLook.y * 0.05;
-    
     renderer.render(scene, camera);
 }
 
 animate();
+
+// 7. Адаптация под экран
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>
