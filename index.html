@@ -1,119 +1,196 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Test Camera</title>
+    <title>3D Mobile Game</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
         body { margin: 0; overflow: hidden; }
-        #debug { 
-            position: fixed; 
-            top: 10px; 
-            left: 10px; 
-            color: white; 
+        #debug {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: white;
             font-family: Arial;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            touch-action: none;
+        }
+        .control-btn {
+            width: 70px;
+            height: 70px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            border: 2px solid white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 24px;
         }
     </style>
 </head>
 <body>
-    <div id="debug">idk hl1</div>
+    <div id="debug">Позиция: (0, 0, 0)<br>Состояние: Стоит</div>
+    <div id="controls">
+        <div class="control-btn" id="jumpBtn">↑</div>
+        <div class="control-btn" id="moveBtn">▶</div>
+    </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-// 1. Настройка сцены
+// 1. Инициализация сцены
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// 2. Освещение и карта
+// 2. Освещение
 const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(0, 10, 10);
+light.position.set(0, 10, 0);
 scene.add(light);
 scene.add(new THREE.AmbientLight(0x404040));
 
-// Пол и стены
+// 3. Генерация карты
+const objects = [];
+
+// Пол
 const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(20, 20),
+    new THREE.PlaneGeometry(30, 30),
     new THREE.MeshPhongMaterial({ color: 0x808080 })
 );
 floor.rotation.x = -Math.PI/2;
 scene.add(floor);
 
-const wall = new THREE.Mesh(
-    new THREE.BoxGeometry(10, 5, 1),
-    new THREE.MeshPhongMaterial({ color: 0xB22222 })
+// Лестница
+const stairGeometry = new THREE.BoxGeometry(3, 0.2, 1);
+for(let i = 0; i < 8; i++) {
+    const step = new THREE.Mesh(
+        stairGeometry,
+        new THREE.MeshPhongMaterial({ color: 0x696969 })
+    );
+    step.position.set(5, i*0.5, i*2-5);
+    scene.add(step);
+    objects.push(step);
+}
+
+// Круглая платформа
+const circle = new THREE.Mesh(
+    new THREE.CylinderGeometry(3, 3, 0.2, 32),
+    new THREE.MeshPhongMaterial({ color: 0x00ff00 })
 );
-wall.position.set(0, 2.5, -5);
-scene.add(wall);
+circle.position.set(-5, 1, 5);
+scene.add(circle);
+objects.push(circle);
 
-// 3. Настройка управления
-let touchStartX = 0;
-let touchStartY = 0;
-let isRotating = false;
-const rotationSpeed = 0.005;
+// 4. Управление персонажем
+let isMoving = false;
+let velocity = new THREE.Vector3();
 const moveSpeed = 0.1;
+const jumpForce = 0.3;
+let isGrounded = true;
 
-// Начальные координаты камеры
-camera.position.set(0, 3, 5);
+// Начальная позиция
+camera.position.set(0, 3, 10);
 camera.lookAt(0, 0, 0);
 
-// 4. Обработчики касаний
-document.addEventListener('touchstart', e => {
-    e.preventDefault();
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    isRotating = true;
+// 5. Обработчики управления
+document.getElementById('moveBtn').addEventListener('touchstart', () => isMoving = true);
+document.getElementById('moveBtn').addEventListener('touchend', () => isMoving = false);
+document.getElementById('jumpBtn').addEventListener('touchstart', () => {
+    if(isGrounded) {
+        velocity.y = jumpForce;
+        isGrounded = false;
+    }
 });
 
-document.addEventListener('touchmove', e => {
-    e.preventDefault();
-    if(!isRotating) return;
+// 6. Физика и коллизии
+function checkCollisions() {
+    const playerBox = new THREE.Box3().setFromObject(camera);
+    return objects.some(obj => {
+        const objBox = new THREE.Box3().setFromObject(obj);
+        return playerBox.intersectsBox(objBox);
+    });
+}
 
-    const deltaX = e.touches[0].clientX - touchStartX;
-    const deltaY = e.touches[0].clientY - touchStartY;
-
-    // Поворот камеры
-    camera.rotation.y -= deltaX * rotationSpeed;
-    camera.rotation.x -= deltaY * rotationSpeed * 0.5;
+// После проверки коллизий
+if(camera.position.y < 1) {
+    camera.position.y = 1;
+    isGrounded = true;
+    velocity.y = 0;
+}
     
-    // Ограничение вертикального поворота
-    camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+// 7. Обновление дебаг-информации
+function updateDebugInfo() {
+    const pos = camera.position;
+    const state = isGrounded ? (isMoving ? "Идёт" : "Стоит") : "В воздухе";
+    document.getElementById('debug').innerHTML = 
+        `Позиция: (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})<br>` +
+        `Состояние: ${state}`;
+}
 
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-});
-
-document.addEventListener('touchend', () => {
-    isRotating = false;
-});
-
-// 5. Движение через свайпы
-let lastTouchY = 0;
-document.addEventListener('touchstart', e => {
-    lastTouchY = e.touches[0].clientY;
-});
-
-document.addEventListener('touchmove', e => {
-    const deltaY = e.touches[0].clientY - lastTouchY;
-    
-    // Движение вперед/назад
-    const direction = new THREE.Vector3(0, 0, -1);
-    direction.applyQuaternion(camera.quaternion);
-    camera.position.add(direction.multiplyScalar(-deltaY * 0.01));
-
-    lastTouchY = e.touches[0].clientY;
-});
-
-// 6. Анимация
+// 8. Главный цикл
 function animate() {
     requestAnimationFrame(animate);
+
+    // Движение
+    if(isMoving) {
+        const direction = new THREE.Vector3(0, 0, -1);
+        direction.applyQuaternion(camera.quaternion);
+        camera.position.add(direction.multiplyScalar(moveSpeed));
+    }
+
+    // Гравитация
+    velocity.y -= 0.01;
+    camera.position.y += velocity.y;
+
+    // Коллизии
+    if(checkCollisions()) {
+        velocity.y = 0;
+        isGrounded = true;
+        camera.position.y = 3; // Фиксированная высота
+    }
+
+    // Лимит поворота камеры
+    camera.rotation.x = Math.max(-Math.PI/3, Math.min(Math.PI/3, camera.rotation.x));
+
+    updateDebugInfo();
     renderer.render(scene, camera);
 }
 
 animate();
 
-// 7. Адаптация под экран
+// 9. Поворот камеры пальцем
+let touchStartX = 0;
+let touchStartY = 0;
+const rotationSpeed = 0.005;
+
+document.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+});
+
+document.addEventListener('touchmove', e => {
+    const deltaX = e.touches[0].clientX - touchStartX;
+    const deltaY = e.touches[0].clientY - touchStartY;
+
+    camera.rotation.y -= deltaX * rotationSpeed;
+    camera.rotation.x -= deltaY * rotationSpeed;
+
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+});
+
+// 10. Адаптация экрана
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
