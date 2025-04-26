@@ -1,22 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>3D Minecraft Clone</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>HL-Style Mobile 16:9</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        /* Стили для красивого интерфейса */
         body { margin: 0; overflow: hidden; }
-        .crosshair {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #fff;
-            font-size: 24px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            pointer-events: none;
-        }
-        #mobileUI {
+        #mobileControls {
             position: fixed;
             bottom: 20px;
             width: 100%;
@@ -25,217 +14,112 @@
             padding: 0 20px;
             touch-action: none;
         }
-        .joystick-area {
-            width: 120px;
-            height: 120px;
+        .joystick {
+            width: 80px;
+            height: 80px;
             background: rgba(255,255,255,0.1);
-            border-radius: 20px;
-            backdrop-filter: blur(5px);
+            border-radius: 50%;
+            border: 2px solid #6B8E23;
         }
-        #blockSelector {
+        #fireBtn {
             position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.7);
-            padding: 10px;
-            border-radius: 10px;
-        }
-        .block-option {
-            width: 40px;
-            height: 40px;
-            margin: 5px;
-            border: 2px solid white;
-            border-radius: 5px;
-            cursor: pointer;
+            right: 20px;
+            bottom: 100px;
+            width: 60px;
+            height: 60px;
+            background: rgba(255,0,0,0.3);
+            border-radius: 50%;
         }
     </style>
 </head>
 <body>
-    <div class="crosshair">✛</div>
-    <div id="mobileUI">
-        <div class="joystick-area" id="moveJoystick"></div>
-        <div class="joystick-area" id="lookJoystick"></div>
+    <div id="mobileControls">
+        <div class="joystick" id="moveStick"></div>
+        <div class="joystick" id="lookStick"></div>
     </div>
-    <div id="blockSelector"></div>
+    <div id="fireBtn"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
 <script>
-// Конфигурация
-const TEXTURES = {
-    grass: 'https://i.imgur.com/9I5qWyJ.png',
-    dirt: 'https://i.imgur.com/4W4yZf8.png',
-    stone: 'https://i.imgur.com/5XrSAYq.png'
-};
-
-// 1. Инициализация 3D мира
+// 1. Настройка сцены и камеры
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
 
-// 2. Освещение и небо
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-hemiLight.position.set(0, 50, 0);
-scene.add(hemiLight);
+// 2. Освещение
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(0, 10, 10);
+scene.add(light);
+scene.add(new THREE.AmbientLight(0x404040));
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(0, 50, 50);
-dirLight.castShadow = true;
-scene.add(dirLight);
+// 3. Генерация карты (видна сразу)
+function createMap() {
+    // Пол
+    const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(20, 20),
+        new THREE.MeshPhongMaterial({ color: 0x808080 })
+    );
+    floor.rotation.x = -Math.PI/2;
+    scene.add(floor);
 
-// 3D-небо
-const skyboxLoader = new THREE.CubeTextureLoader();
-scene.background = skyboxLoader.load([
-    TEXTURES.sky, TEXTURES.sky,
-    TEXTURES.sky, TEXTURES.sky,
-    TEXTURES.sky, TEXTURES.sky
-]);
+    // Кирпичная стена
+    const brickWall = new THREE.Mesh(
+        new THREE.BoxGeometry(10, 4, 1),
+        new THREE.MeshPhongMaterial({ color: 0xB22222 })
+    );
+    brickWall.position.set(0, 2, -5);
+    scene.add(brickWall);
 
-// 3. Физика игрока
-const world = new CANNON.World();
-world.gravity.set(0, -9.82, 0);
-const playerBody = new CANNON.Body({
-    mass: 5,
-    position: new CANNON.Vec3(0, 10, 0),
-    shape: new CANNON.Box(new CANNON.Vec3(0.3, 1.8, 0.3))
-});
-world.addBody(playerBody);
-
-// 4. Генерация мира
-function createBlock(x, y, z, type) {
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const materials = Array(6).fill(new THREE.MeshStandardMaterial({
-        map: new THREE.TextureLoader().load(TEXTURES[type])
-    }));
-    
-    const cube = new THREE.Mesh(geometry, materials);
-    cube.position.set(x, y, z);
-    cube.castShadow = true;
-    cube.receiveShadow = true;
-    scene.add(cube);
-
-    // Физическое тело
-    const boxBody = new CANNON.Body({ mass: 0 });
-    boxBody.addShape(new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5)));
-    boxBody.position.set(x, y, z);
-    world.addBody(boxBody);
-}
-
-// Генерация платформы
-for(let x = -5; x <= 5; x++) {
-    for(let z = -5; z <= 5; z++) {
-        createBlock(x, -1, z, 'dirt');
+    // Лестница
+    for(let i = 0; i < 5; i++) {
+        const step = new THREE.Mesh(
+            new THREE.BoxGeometry(2, 0.5, 1),
+            new THREE.MeshPhongMaterial({ color: 0x696969 })
+        );
+        step.position.set(3, i*0.5, i*2-5);
+        scene.add(step);
     }
 }
+createMap(); // Сразу создаем карту
 
-// 5. Управление
-const controls = {
-    move: { x: 0, y: 0 },
-    look: { x: 0, y: 0 },
-    jump: false,
-    selectedBlock: 0
-};
+// 4. Настройка камеры
+camera.position.set(0, 3, 5);
+camera.lookAt(0, 0, 0);
 
-// Мобильное управление
-let touchId = null;
-document.getElementById('lookJoystick').addEventListener('touchstart', e => {
-    touchId = e.touches[0].identifier;
-});
-document.getElementById('lookJoystick').addEventListener('touchmove', e => {
-    for(let touch of e.touches) {
-        if(touch.identifier === touchId) {
-            controls.look.x = (touch.clientX / window.innerWidth - 0.5) * 2;
-            controls.look.y = (touch.clientY / window.innerHeight - 0.5) * 2;
-        }
-    }
+// 5. Мобильное управление
+let touchMove = { x: 0, y: 0 };
+let touchLook = { x: 0, y: 0 };
+
+document.getElementById('moveStick').addEventListener('touchmove', e => {
+    const rect = e.target.getBoundingClientRect();
+    touchMove.x = (e.touches[0].clientX - rect.left - 40) / 40;
+    touchMove.y = (e.touches[0].clientY - rect.top - 40) / 40;
 });
 
-// ПК управление
-document.addEventListener('mousemove', e => {
-    if(document.pointerLockElement === document.body) {
-        camera.rotation.y -= e.movementX * 0.002;
-        camera.rotation.x -= e.movementY * 0.002;
-    }
+document.getElementById('lookStick').addEventListener('touchmove', e => {
+    const rect = e.target.getBoundingClientRect();
+    touchLook.x = (e.touches[0].clientX - rect.left - 40) / 40;
+    touchLook.y = (e.touches[0].clientY - rect.top - 40) / 40;
 });
 
-document.addEventListener('click', () => {
-    document.body.requestPointerLock();
-});
-
-// 6. Прыжки и движение
-function updatePlayer(delta) {
-    // Поворот камеры
-    camera.rotation.y += controls.look.x * delta * 2;
-    camera.rotation.x += controls.look.y * delta * 2;
-
-    // Движение
-    const direction = new THREE.Vector3();
-    direction.z = controls.move.y;
-    direction.x = controls.move.x;
-    direction.applyEuler(camera.rotation);
-    
-    playerBody.velocity.x = direction.x * 5;
-    playerBody.velocity.z = direction.z * 5;
-    
-    // Прыжок
-    if(controls.jump && playerBody.velocity.y === 0) {
-        playerBody.velocity.y = 5;
-    }
-}
-
-// 7. Главный цикл
-let lastTime = performance.now();
+// 6. Анимация
 function animate() {
-    const time = performance.now();
-    const delta = (time - lastTime) / 1000;
-    lastTime = time;
-
-    updatePlayer(delta);
-    world.step(1/60);
+    requestAnimationFrame(animate);
     
-    // Синхронизация камеры с физикой
-    camera.position.copy(playerBody.position);
-    camera.position.y += 1.6;
+    // Движение
+    camera.position.x += touchMove.x * 0.1;
+    camera.position.z += touchMove.y * 0.1;
+    
+    // Поворот
+    camera.rotation.y += touchLook.x * 0.05;
+    camera.rotation.x += touchLook.y * 0.05;
     
     renderer.render(scene, camera);
-    requestAnimationFrame(animate);
 }
 
 animate();
-
-// 8. Добавление/удаление блоков
-const raycaster = new THREE.Raycaster();
-document.addEventListener('click', e => {
-    const mouse = new THREE.Vector2(
-        (e.clientX / window.innerWidth) * 2 - 1,
-        -(e.clientY / window.innerHeight) * 2 + 1
-    );
-    
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(scene.children);
-    
-    if(intersects.length > 0) {
-        const pos = intersects[0].point;
-        const normal = intersects[0].face.normal;
-        createBlock(
-            Math.floor(pos.x + normal.x * 0.5),
-            Math.floor(pos.y + normal.y * 0.5),
-            Math.floor(pos.z + normal.z * 0.5),
-            'stone'
-        );
-    }
-});
-
-// 9. Адаптация под экран
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
 </script>
 </body>
-  </html>
+</html>
